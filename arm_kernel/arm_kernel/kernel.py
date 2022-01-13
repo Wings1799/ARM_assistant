@@ -2,12 +2,12 @@ from ipykernel.kernelbase import Kernel
 import socket
 import selectors
 import types
+from io import StringIO
 
-sel = selectors.DefaultSelector()
 messages = []
 
 
-def start_connections(host, port, num_conns):
+def start_connections(host, port, num_conns, sel):
     server_addr = (host, port)
     for i in range(0, num_conns):
         connid = i + 1
@@ -26,14 +26,15 @@ def start_connections(host, port, num_conns):
         sel.register(sock, events, data=data)
 
 
-def service_connection(key, mask):
+def service_connection(key, mask, outString, sel):
     sock = key.fileobj
     data = key.data
     if mask & selectors.EVENT_READ:
         recv_data = sock.recv(1024)  # Should be ready to read
         if recv_data:
             # print("received", repr(recv_data), "from connection", data.connid)
-            print("\n---------------\n", recv_data.decode("utf-8"), "\n---------------")
+            # print("\n---------------\n", recv_data.decode("utf-8"), "\n---------------")
+            outString.write(recv_data.decode("utf-8"))
             data.recv_total += len(recv_data)
         if not recv_data or data.recv_total == data.msg_total:
             print("closing connection", data.connid)
@@ -47,34 +48,29 @@ def service_connection(key, mask):
             sent = sock.send(data.outb)  # Should be ready to write
             data.outb = data.outb[sent:]
 
-
 def connectToPi(host, port, code):
     num_conns = 1
     contents = bytes(code, 'utf-8')
-    output = None
+    messages.clear()
     messages.append(contents)
-    start_connections(host, int(port), int(num_conns))
+    sel = selectors.DefaultSelector()
+    start_connections(host, int(port), int(num_conns), sel)
+    file_str = StringIO()
 
     try:
         while True:
             events = sel.select(timeout=1)
             if events:
                 for key, mask in events:
-                    service_connection(key, mask)
-                    output = key.data.outb
+                    service_connection(key, mask, file_str, sel)
             # Check for a socket being monitored to continue.
-            # else:
-            #     return "Unknown Error X!!!!!"
             if not sel.get_map():
                 break
     except KeyboardInterrupt:
         print("caught keyboard interrupt, exiting")
     finally:
         sel.close()
-        
-    stringoutput = output.decode("utf-8")
-    
-    return stringoutput
+    return file_str.getvalue()
 
 class ArmKernel(Kernel):
     implementation = 'ARM Assembly'
