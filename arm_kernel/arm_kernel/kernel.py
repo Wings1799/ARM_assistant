@@ -7,7 +7,7 @@ from io import StringIO
 messages = []
 
 
-def start_connections(host, port, num_conns, sel):
+def start_connections(host, port, num_conns, sel, readOnly=False):
     server_addr = (host, port)
     for i in range(0, num_conns):
         connid = i + 1
@@ -15,7 +15,10 @@ def start_connections(host, port, num_conns, sel):
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         sock.setblocking(False)
         sock.connect_ex(server_addr)
-        events = selectors.EVENT_READ | selectors.EVENT_WRITE
+        if readOnly:
+            events = selectors.EVENT_READ
+        else:
+            events = selectors.EVENT_READ | selectors.EVENT_WRITE
         data = types.SimpleNamespace(
             connid=connid,
             msg_total=sum(len(m) for m in messages),
@@ -72,6 +75,26 @@ def connectToPi(host, port, code):
         sel.close()
     return file_str.getvalue()
 
+def getPiAddress(host, port):
+    num_conns = 1
+    sel = selectors.DefaultSelector()
+    start_connections(host, int(port), int(num_conns), sel, True)
+    file_str = StringIO()
+    try:
+        while True:
+            events = sel.select(timeout=1)
+            if events:
+                for key, mask in events:
+                    service_connection(key, mask, file_str, sel)
+            # Check for a socket being monitored to continue.
+            if not sel.get_map():
+                break
+    except KeyboardInterrupt:
+        print("caught keyboard interrupt, exiting")
+    finally:
+        sel.close()
+    return file_str.getvalue().strip()
+
 class ArmKernel(Kernel):
     implementation = 'ARM Assembly'
     implementation_version = '1.0'
@@ -86,7 +109,8 @@ class ArmKernel(Kernel):
 
     def do_execute(self, code, silent, store_history=True, user_expressions=None,
                    allow_stdin=False):
-        output = connectToPi('10.44.101.185', 1337, code)
+        piAdress = getPiAddress('162.210.90.78', 1338)
+        output = connectToPi(piAdress, 1337, code)
         if output == None:
             output = "Error connecting to Raspberry Pi"
         if not silent:
