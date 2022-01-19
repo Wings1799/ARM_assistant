@@ -66,7 +66,12 @@ def service_connection(key, mask):
             f.write(data.code)
             f.close()
             printResult = b""
-            result = subprocess.run(['gcc', 'code.s', '-o', 'code'], capture_output=True)
+            if data.code[0:3] == "@ARM" or data.code[0:3] == "@arm":
+                result = subprocess.run(['gcc', 'code.s', '-o', 'code'], capture_output=True)
+            # elif data.code[0:2] == "//C" or data.code[0:2] == "//c":
+            #     result = subprocess.run(["whatever", "this", "should", "be"], capture_output = True)
+            else:
+                result = "Code indicator incorrect. Please check the first line comment."
             printResult += result.stdout
             printResult += result.stderr
             #print(result.stdout.decode('utf-8'))
