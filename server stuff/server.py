@@ -60,19 +60,33 @@ def service_connection(key, mask):
         if data.code:
             #print("echoing", repr(data.outb), "to", data.addr)
             print("received data, compiling")
+            isArm = False
+            isC = False
+
+            if data.code[0:7] == b"/*ARM*/" or data.code[0:7] == b"/*arm*/":
+                isArm = True
+            elif data.code[0:5] == b"/*C*/" or data.code[0:5] == b"/*c*/":
+                isC = True
+
             if os.path.exists("code"):
                 os.remove("code")
-            f = open("code.s", "wb")
-            f.write(data.code)
-            f.close()
+            if isC:
+                f = open("code.c", "wb")
+                f.write(data.code)
+                f.close()
+            elif isArm:
+                f = open("code.s", "wb")
+                f.write(data.code)
+                f.close()
+            
             printResult = b""
             dontContinue = False
-            if data.code[0:6] == "/*ARM*/" or data.code[0:6] == "/*arm*/":
+            if isArm:
                 result = subprocess.run(['gcc', 'code.s', '-o', 'code'], capture_output=True)
-            elif data.code[0:4] == "/*C*/" or data.code[0:4] == "/*c*/":
-                result = subprocess.run(["gcc", "code.s", "-c", "code"], capture_output = True)
+            elif isC:
+                result = subprocess.run(['gcc', 'code.c', '-o', 'code'], capture_output = True)
             else:
-                printResult = "Code indicator incorrect. Please check the first line comment."
+                printResult = b"Code indicator incorrect. Please check the first line comment."
                 dontContinue = True
             if not dontContinue:
                 printResult += result.stdout
