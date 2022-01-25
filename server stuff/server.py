@@ -8,6 +8,7 @@ import subprocess
 import os
 from threading import Thread
 from time import sleep
+from subprocess import STDOUT, check_output
 
 sel = selectors.DefaultSelector()
 
@@ -82,9 +83,17 @@ def service_connection(key, mask):
             printResult = b""
             dontContinue = False
             if isArm:
-                result = subprocess.run(['gcc', 'code.s', '-o', 'code'], capture_output=True)
+                try:
+                    result = subprocess.run(['gcc', 'code.s', '-o', 'code'], capture_output=True, timeout=15)
+                except subprocess.TimeoutExpired:
+                    printResult = b"Timeout reached during code execution"
+                    dontContinue = True
             elif isC:
-                result = subprocess.run(['gcc', 'code.c', '-o', 'code'], capture_output = True)
+                try:
+                    result = subprocess.run(['gcc', 'code.c', '-o', 'code'], capture_output = True, timeout=15)
+                except subprocess.TimeoutExpired:
+                    printResult = b"Timeout reached during code execution"
+                    dontContinue = True
             else:
                 printResult = b"Code indicator incorrect. Please check the first line comment."
                 dontContinue = True
@@ -93,10 +102,13 @@ def service_connection(key, mask):
                 printResult += result.stderr
                 #print(result.stdout.decode('utf-8'))
                 try:
-                    result2 = subprocess.run(['./code'], capture_output=True)
+                    print("Executing code...")
+                    result2 = subprocess.run(['./code'], capture_output=True, timeout=5)
                     printResult += result2.stdout
                     printResult += result2.stderr
                     #print(result2.stdout.decode('utf-8'))
+                except subprocess.TimeoutExpired:
+                    printResult = b"Timeout reached during code execution"
                 except:
                     print("Halting.")
             data.outb = printResult

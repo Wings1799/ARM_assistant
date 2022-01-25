@@ -1,3 +1,4 @@
+from tokenize import String
 from ipykernel.kernelbase import Kernel
 import socket
 import selectors
@@ -7,26 +8,32 @@ from io import StringIO
 messages = []
 
 
-def start_connections(host, port, num_conns, sel, readOnly=False):
+def start_connections(host, port, sel, readOnly=False):
     server_addr = (host, port)
-    for i in range(0, num_conns):
-        connid = i + 1
-        print("starting connection", connid, "to", server_addr)
-        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    connid = 1
+    print("starting connection", connid, "to", server_addr)
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    sock.setblocking(True)
+    try:
+        sock.connect(server_addr)
+        checkErr = 0
         sock.setblocking(False)
-        sock.connect_ex(server_addr)
-        if readOnly:
-            events = selectors.EVENT_READ
-        else:
-            events = selectors.EVENT_READ | selectors.EVENT_WRITE
-        data = types.SimpleNamespace(
-            connid=connid,
-            msg_total=sum(len(m) for m in messages),
-            recv_total=0,
-            messages=list(messages),
-            outb=b"",
-        )
-        sel.register(sock, events, data=data)
+    except Exception as err:
+        print("Error: ", err)
+        checkErr = -1
+    if readOnly:
+        events = selectors.EVENT_READ
+    else:
+        events = selectors.EVENT_READ | selectors.EVENT_WRITE
+    data = types.SimpleNamespace(
+        connid=connid,
+        msg_total=sum(len(m) for m in messages),
+        recv_total=0,
+        messages=list(messages),
+        outb=b"",
+    )
+    sel.register(sock, events, data=data)
+    return checkErr
 
 
 def service_connection(key, mask, outString, sel):
@@ -52,48 +59,53 @@ def service_connection(key, mask, outString, sel):
             data.outb = data.outb[sent:]
 
 def connectToPi(host, port, code):
-    num_conns = 1
     contents = bytes(code, 'utf-8')
     messages.clear()
     messages.append(contents)
     sel = selectors.DefaultSelector()
-    start_connections(host, int(port), int(num_conns), sel)
-    file_str = StringIO()
-
-    try:
-        while True:
-            events = sel.select(timeout=1)
-            if events:
-                for key, mask in events:
-                    service_connection(key, mask, file_str, sel)
-            # Check for a socket being monitored to continue.
-            if not sel.get_map():
-                break
-    except KeyboardInterrupt:
-        print("caught keyboard interrupt, exiting")
-    finally:
+    checkErr = start_connections(host, int(port), sel)
+    if checkErr == 0:
+        file_str = StringIO()
+        try:
+            while True:
+                events = sel.select(timeout=1)
+                if events:
+                    for key, mask in events:
+                        service_connection(key, mask, file_str, sel)
+                # Check for a socket being monitored to continue.
+                if not sel.get_map():
+                    break
+        except KeyboardInterrupt:
+            print("caught keyboard interrupt, exiting")
+        finally:
+            sel.close()
+        return file_str.getvalue()
+    else:
         sel.close()
-    return file_str.getvalue()
+        return "Error connecting to Raspberry Pi"
 
 def getPiAddress(host, port):
-    num_conns = 1
     sel = selectors.DefaultSelector()
-    start_connections(host, int(port), int(num_conns), sel, True)
-    file_str = StringIO()
-    try:
-        while True:
-            events = sel.select(timeout=1)
-            if events:
-                for key, mask in events:
-                    service_connection(key, mask, file_str, sel)
-            # Check for a socket being monitored to continue.
-            if not sel.get_map():
-                break
-    except KeyboardInterrupt:
-        print("caught keyboard interrupt, exiting")
-    finally:
+    checkErr = start_connections(host, int(port), sel, True)
+    if checkErr == 0:
+        file_str = StringIO()
+        try:
+            while True:
+                events = sel.select(timeout=1)
+                if events:
+                    for key, mask in events:
+                        service_connection(key, mask, file_str, sel)
+                # Check for a socket being monitored to continue.
+                if not sel.get_map():
+                    break
+        except KeyboardInterrupt:
+            print("caught keyboard interrupt, exiting")
+        finally:
+            sel.close()
+        return file_str.getvalue().strip()
+    else:
         sel.close()
-    return file_str.getvalue().strip()
+        return "Error connecting to Raspberry Pi Head Node"
 
 class ArmKernel(Kernel):
     implementation = 'ARM Assembly'
@@ -109,7 +121,11 @@ class ArmKernel(Kernel):
 
     def do_execute(self, code, silent, store_history=True, user_expressions=None,
                    allow_stdin=False):
-        piAdress = getPiAddress('162.210.90.78', 1338)
+        secondLine = code.splitlines()[1]
+        if secondLine[0:5].lower() == "/*ip:" and secondLine[-2:] == "*/":
+            piAdress = secondLine[5:-2].strip()
+        else:
+            piAdress = getPiAddress('162.210.90.78', 1338)
         output = connectToPi(piAdress, 1337, code)
         if output == None:
             output = "Error connecting to Raspberry Pi"
