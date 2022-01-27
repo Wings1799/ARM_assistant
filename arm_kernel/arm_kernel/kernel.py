@@ -4,6 +4,7 @@ import socket
 import selectors
 import types
 from io import StringIO
+import time
 
 messages = []
 
@@ -121,14 +122,15 @@ class ArmKernel(Kernel):
 
     def do_execute(self, code, silent, store_history=True, user_expressions=None,
                    allow_stdin=False):
+        time_start = time.time()
         secondLine = code.splitlines()[1]
         if secondLine[0:5].lower() == "/*ip:" and secondLine[-2:] == "*/":
             piAdress = secondLine[5:-2].strip()
         else:
             piAdress = getPiAddress('162.210.90.78', 1338)
         output = connectToPi(piAdress, 1337, code)
-        if output == None:
-            output = "Error connecting to Raspberry Pi"
+        time_elapsed = str(time.time() - time_start)
+        output += "\nTime elapsed: " + time_elapsed
         if not silent:
             stream_content = {'name': 'stdout', 'text': output}
             self.send_response(self.iopub_socket, 'stream', stream_content)
